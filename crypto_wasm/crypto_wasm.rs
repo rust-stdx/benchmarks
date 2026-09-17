@@ -5,7 +5,7 @@
 //
 // Or: RUSTFLAGS="-C target-feature=+simd128" cargo run --release --target=wasm32-wasip1 -p crypto_wasm -- [category ...]
 //
-// Categories: hash, mac, stream, aead. Passing one or more runs only those
+// Categories: hash, mac, stream, aead, sign. Passing one or more runs only those
 // categories; passing none runs every category. Use --help to list them.
 
 use std::{
@@ -20,13 +20,16 @@ use crypto::{
     ascon::{AsconAead128, AsconHash256},
     blake3::Blake3,
     chacha::{ChaCha8Djb, ChaCha8Poly1305, ChaCha12Djb, ChaCha20Blake3, ChaCha20Djb, ChaCha20Poly1305},
+    curve25519::ed25519::SecretKey,
     hmac::Hmac,
+    mldsa::{ml_dsa_65_generate_keypair, ml_dsa_65_sign, ml_dsa_65_verify},
     poly1305::Poly1305,
     sha2::{Sha256, Sha512},
     sha3::{Kmac256, Sha3_256, Sha3_512, Shake256},
 };
 
 const DATA_SIZES: &[usize] = &[64, 1024, 16 * 1024, 64 * 1024, 1024 * 1024];
+const SIGN_DATA_SIZES: &[usize] = &[64, 1024, 64 * 1024, 1024 * 1024];
 
 const KEY: [u8; 32] = [
     0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4A, 0x4B, 0x4C, 0x4D, 0x4E, 0x4F, 0x50, 0x51, 0x52,
@@ -56,10 +59,17 @@ enum Category {
     Mac,
     Stream,
     Aead,
+    Sign,
 }
 
 impl Category {
-    const ALL: [Category; 4] = [Category::Hash, Category::Mac, Category::Stream, Category::Aead];
+    const ALL: [Category; 5] = [
+        Category::Hash,
+        Category::Mac,
+        Category::Stream,
+        Category::Aead,
+        Category::Sign,
+    ];
 
     fn parse(s: &str) -> Option<Self> {
         match s {
@@ -67,6 +77,7 @@ impl Category {
             "mac" => Some(Category::Mac),
             "stream" => Some(Category::Stream),
             "aead" => Some(Category::Aead),
+            "sign" => Some(Category::Sign),
             _ => None,
         }
     }
@@ -77,6 +88,7 @@ impl Category {
             Category::Mac => "mac",
             Category::Stream => "stream",
             Category::Aead => "aead",
+            Category::Sign => "sign",
         }
     }
 
@@ -144,6 +156,9 @@ fn main() {
     }
     if Category::Aead.enabled(&selected) {
         bench_aead(&mut results);
+    }
+    if Category::Sign.enabled(&selected) {
+        bench_signatures(&mut results);
     }
 
     print_results(&results);
@@ -418,6 +433,46 @@ fn bench_aead(results: &mut Vec<(&str, usize, &str, f64)>) {
             let _ = ascon_aead.decrypt_in_place(&mut buf, &NONCE_16[..], &[], tag.as_ref());
         });
         results.push(("aead", size, "Ascon-AEAD128-decrypt", mbs));
+
+        eprintln!();
+    }
+}
+
+fn bench_signatures(results: &mut Vec<(&str, usize, &str, f64)>) {
+    section("SIGNATURES");
+
+    let ed25519_sk = SecretKey::generate();
+    let ed25519_pk = ed25519_sk.public_key();
+    let (mldsa65_seed, mldsa65_pk) = ml_dsa_65_generate_keypair();
+
+    for &size in SIGN_DATA_SIZES {
+        let data = vec![0xA5u8; size];
+
+        let data2 = data.clone();
+        let mbs = benchmark("Ed25519-sign", size, || {
+            let signature = ed25519_sk.sign(black_box(&data2));
+            black_box(signature);
+        });
+        results.push(("sign", size, "Ed25519-sign", mbs));
+
+        let signature = ed25519_sk.sign(&data);
+        let mbs = benchmark("Ed25519-verify", size, || {
+            black_box(ed25519_pk.verify(black_box(&data), &signature).is_ok());
+        });
+        results.push(("sign", size, "Ed25519-verify", mbs));
+
+        let data2 = data.clone();
+        let mbs = benchmark("ML-DSA-65-sign", size, || {
+            let signature = ml_dsa_65_sign(black_box(&mldsa65_seed), black_box(&data2), &[]).unwrap();
+            black_box(signature);
+        });
+        results.push(("sign", size, "ML-DSA-65-sign", mbs));
+
+        let signature = ml_dsa_65_sign(&mldsa65_seed, &data, &[]).unwrap();
+        let mbs = benchmark("ML-DSA-65-verify", size, || {
+            black_box(ml_dsa_65_verify(black_box(&mldsa65_pk), black_box(&data), &signature, &[]).is_ok());
+        });
+        results.push(("sign", size, "ML-DSA-65-verify", mbs));
 
         eprintln!();
     }
