@@ -1,0 +1,56 @@
+name: Benchmarks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  benchmarks_native:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    env:
+      RUSTFLAGS: "-C target-cpu=native"
+    steps:
+      # stdx is pulled at the workspace root and this repository is nested
+      # under it, so that the `crypto = { path = "../../crypto" }` dependencies
+      # of the benchmark crates resolve to stdx/crypto.
+      - name: Checkout stdx
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: rust-stdx/stdx
+          path: .
+      - name: Checkout benchmarks
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: benchmarks
+      - run: cat /proc/cpuinfo
+      - run: sudo apt-get update && sudo apt upgrade && sudo apt-get install -y clang lld
+      - run: rustup update stable
+      - run: cargo bench -p crypto_native
+        working-directory: benchmarks
+
+  benchmarks_wasm:
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: "-C target-feature=+simd128"
+    steps:
+      - name: Checkout stdx
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: rust-stdx/stdx
+          path: .
+      - name: Checkout benchmarks
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: benchmarks
+      - run: cat /proc/cpuinfo
+      - run: sudo apt-get update && sudo apt upgrade && sudo apt-get install -y clang lld
+      - run: rustup update stable
+      - run: rustup target add wasm32-wasip1
+      - run: cargo run --release --target=wasm32-wasip1 -p crypto_wasm
+        working-directory: benchmarks

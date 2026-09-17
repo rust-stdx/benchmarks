@@ -1,0 +1,18 @@
+[package]
+# the package needs to be named crypto_native to avoid collisions with "crypto"
+name = "crypto_native"
+version = "0.1.0"
+edition = "2024"
+
+[dev-dependencies]
+crypto = { path = "../../crypto", default-features = false, features = ["std"] }
+aws-lc-rs = "1"
+aes-gcm = "0.11"
+chacha20poly1305 = "0.11"
+sha2 = "0.11"
+inout = "0.2"
+criterion = { version = "0.8", features = ["html_reports"] }
+
+[[bench]]
+name = "crypto_native"
+harness = false
