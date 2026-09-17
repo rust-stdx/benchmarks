@@ -12,7 +12,7 @@ use aws_lc_rs::{
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use crypto::{
     curve25519::ed25519::SecretKey,
-    mldsa::{MlDsa44SigningKey, MlDsa65SigningKey, MlDsa87SigningKey},
+    mldsa::{MlDsa44SecretKey, MlDsa65SecretKey, MlDsa87SecretKey},
 };
 use ed25519_dalek::{Signer, SigningKey as EdSigningKey, Verifier};
 use ml_dsa::{
@@ -88,8 +88,7 @@ fn bench_ed25519(c: &mut Criterion) {
 }
 
 fn bench_ml_dsa_44(c: &mut Criterion) {
-    let mut std_sk = MlDsa44SigningKey::new();
-    std_sk.init(&SEED);
+    let std_sk = MlDsa44SecretKey::new(&SEED);
     let std_pk = std_sk.public_key();
 
     let aws_keypair = PqdsaKeyPair::generate(&ML_DSA_44_SIGNING).unwrap();
@@ -154,8 +153,7 @@ fn bench_ml_dsa_44(c: &mut Criterion) {
 }
 
 fn bench_ml_dsa_65(c: &mut Criterion) {
-    let mut std_sk = MlDsa65SigningKey::new();
-    std_sk.init(&SEED);
+    let std_sk = MlDsa65SecretKey::new(&SEED);
     let std_pk = std_sk.public_key();
 
     let aws_keypair = PqdsaKeyPair::generate(&ML_DSA_65_SIGNING).unwrap();
@@ -220,8 +218,7 @@ fn bench_ml_dsa_65(c: &mut Criterion) {
 }
 
 fn bench_ml_dsa_87(c: &mut Criterion) {
-    let mut std_sk = MlDsa87SigningKey::new();
-    std_sk.init(&SEED);
+    let std_sk = MlDsa87SecretKey::new(&SEED);
     let std_pk = std_sk.public_key();
 
     let aws_keypair = PqdsaKeyPair::generate(&ML_DSA_87_SIGNING).unwrap();
