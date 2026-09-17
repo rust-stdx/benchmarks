@@ -23,7 +23,7 @@ release used by `ascon-hash256`.
 | MAC | HMAC-SHA256, HMAC-SHA512, Poly1305, BLAKE3-keyed |
 | Stream cipher | AES-256-CTR, ChaCha8, ChaCha12, ChaCha20 |
 | AEAD | AES-256-GCM, AES-128-GCM, ChaCha20-Poly1305, Ascon-AEAD128 (encrypt and decrypt) |
-| Signatures | Ed25519, ML-DSA-65 (sign and verify) |
+| Signatures | Ed25519, ML-DSA-44/65/87 (sign and verify) |
 
 The following `stdx/crypto` algorithms are intentionally **not** benchmarked
 here because none of the compared crates provide an equivalent to compare

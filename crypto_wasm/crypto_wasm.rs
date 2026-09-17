@@ -22,7 +22,7 @@ use crypto::{
     chacha::{ChaCha8Djb, ChaCha8Poly1305, ChaCha12Djb, ChaCha20Blake3, ChaCha20Djb, ChaCha20Poly1305},
     curve25519::ed25519::SecretKey,
     hmac::Hmac,
-    mldsa::{ml_dsa_65_generate_keypair, ml_dsa_65_sign, ml_dsa_65_verify},
+    mldsa::{MlDsa44SigningKey, MlDsa65SigningKey, MlDsa87SigningKey},
     poly1305::Poly1305,
     sha2::{Sha256, Sha512},
     sha3::{Kmac256, Sha3_256, Sha3_512, Shake256},
@@ -443,7 +443,15 @@ fn bench_signatures(results: &mut Vec<(&str, usize, &str, f64)>) {
 
     let ed25519_sk = SecretKey::generate();
     let ed25519_pk = ed25519_sk.public_key();
-    let (mldsa65_seed, mldsa65_pk) = ml_dsa_65_generate_keypair();
+    let mut mldsa44_sk = MlDsa44SigningKey::new();
+    mldsa44_sk.init(&[0u8; 32]);
+    let mldsa44_pk = mldsa44_sk.public_key();
+    let mut mldsa65_sk = MlDsa65SigningKey::new();
+    mldsa65_sk.init(&[0u8; 32]);
+    let mldsa65_pk = mldsa65_sk.public_key();
+    let mut mldsa87_sk = MlDsa87SigningKey::new();
+    mldsa87_sk.init(&[0u8; 32]);
+    let mldsa87_pk = mldsa87_sk.public_key();
 
     for &size in SIGN_DATA_SIZES {
         let data = vec![0xA5u8; size];
@@ -462,17 +470,43 @@ fn bench_signatures(results: &mut Vec<(&str, usize, &str, f64)>) {
         results.push(("sign", size, "Ed25519-verify", mbs));
 
         let data2 = data.clone();
+        let mbs = benchmark("ML-DSA-44-sign", size, || {
+            let signature = mldsa44_sk.sign(black_box(&data2), &[]).unwrap();
+            black_box(signature);
+        });
+        results.push(("sign", size, "ML-DSA-44-sign", mbs));
+
+        let signature = mldsa44_sk.sign(&data, &[]).unwrap();
+        let mbs = benchmark("ML-DSA-44-verify", size, || {
+            black_box(mldsa44_pk.verify(black_box(&data), &signature, &[]).is_ok());
+        });
+        results.push(("sign", size, "ML-DSA-44-verify", mbs));
+
+        let data2 = data.clone();
         let mbs = benchmark("ML-DSA-65-sign", size, || {
-            let signature = ml_dsa_65_sign(black_box(&mldsa65_seed), black_box(&data2), &[]).unwrap();
+            let signature = mldsa65_sk.sign(black_box(&data2), &[]).unwrap();
             black_box(signature);
         });
         results.push(("sign", size, "ML-DSA-65-sign", mbs));
 
-        let signature = ml_dsa_65_sign(&mldsa65_seed, &data, &[]).unwrap();
+        let signature = mldsa65_sk.sign(&data, &[]).unwrap();
         let mbs = benchmark("ML-DSA-65-verify", size, || {
-            black_box(ml_dsa_65_verify(black_box(&mldsa65_pk), black_box(&data), &signature, &[]).is_ok());
+            black_box(mldsa65_pk.verify(black_box(&data), &signature, &[]).is_ok());
         });
         results.push(("sign", size, "ML-DSA-65-verify", mbs));
+
+        let data2 = data.clone();
+        let mbs = benchmark("ML-DSA-87-sign", size, || {
+            let signature = mldsa87_sk.sign(black_box(&data2), &[]).unwrap();
+            black_box(signature);
+        });
+        results.push(("sign", size, "ML-DSA-87-sign", mbs));
+
+        let signature = mldsa87_sk.sign(&data, &[]).unwrap();
+        let mbs = benchmark("ML-DSA-87-verify", size, || {
+            black_box(mldsa87_pk.verify(black_box(&data), &signature, &[]).is_ok());
+        });
+        results.push(("sign", size, "ML-DSA-87-verify", mbs));
 
         eprintln!();
     }

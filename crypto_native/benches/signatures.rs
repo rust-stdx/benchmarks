@@ -4,17 +4,20 @@ use std::hint::black_box;
 
 use aws_lc_rs::{
     encoding::AsDer,
-    signature::{self, ED25519, KeyPair, ML_DSA_65, ML_DSA_65_SIGNING, PqdsaKeyPair, UnparsedPublicKey},
+    signature::{
+        self, ED25519, KeyPair, ML_DSA_44, ML_DSA_44_SIGNING, ML_DSA_65, ML_DSA_65_SIGNING, ML_DSA_87,
+        ML_DSA_87_SIGNING, PqdsaKeyPair, UnparsedPublicKey,
+    },
 };
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use crypto::{
     curve25519::ed25519::SecretKey,
-    mldsa::{ml_dsa_65_generate_keypair, ml_dsa_65_sign, ml_dsa_65_verify},
+    mldsa::{MlDsa44SigningKey, MlDsa65SigningKey, MlDsa87SigningKey},
 };
 use ed25519_dalek::{Signer, SigningKey as EdSigningKey, Verifier};
 use ml_dsa::{
-    KeyInit as MlKeyInit, Keypair as MlKeypair, MlDsa65, Signer as MlSigner, SigningKey as MlSigningKey,
-    Verifier as MlVerifier,
+    KeyInit as MlKeyInit, Keypair as MlKeypair, MlDsa44, MlDsa65, MlDsa87, Signer as MlSigner,
+    SigningKey as MlSigningKey, Verifier as MlVerifier,
 };
 
 const DATA_SIZES: &[usize] = &[64, 1024, 64 * 1024, 1024 * 1024];
@@ -48,7 +51,7 @@ fn bench_ed25519(c: &mut Criterion) {
                 black_box(aws_keypair.sign(black_box(data)));
             });
         });
-        group.bench_with_input(BenchmarkId::new("RustCrypto", size), data, |b, data| {
+        group.bench_with_input(BenchmarkId::new("Dalek", size), data, |b, data| {
             b.iter(|| {
                 black_box(rc_sk.sign(black_box(data)));
             });
@@ -75,6 +78,72 @@ fn bench_ed25519(c: &mut Criterion) {
                 black_box(aws_verifier.verify(black_box(data), aws_sig.as_ref()).is_ok());
             });
         });
+        group.bench_with_input(BenchmarkId::new("Dalek", size), data, |b, data| {
+            b.iter(|| {
+                black_box(rc_pk.verify(black_box(data), &rc_sig).is_ok());
+            });
+        });
+    }
+    group.finish();
+}
+
+fn bench_ml_dsa_44(c: &mut Criterion) {
+    let mut std_sk = MlDsa44SigningKey::new();
+    std_sk.init(&SEED);
+    let std_pk = std_sk.public_key();
+
+    let aws_keypair = PqdsaKeyPair::generate(&ML_DSA_44_SIGNING).unwrap();
+    let aws_pk = aws_keypair.public_key().as_der().unwrap();
+    let aws_verifier = UnparsedPublicKey::new(&ML_DSA_44, aws_pk.as_ref());
+
+    let rc_sk = MlSigningKey::<MlDsa44>::new_from_slice(&SEED).unwrap();
+    let rc_pk = rc_sk.verifying_key();
+
+    let mut group = c.benchmark_group("ML-DSA-44/sign");
+    for &size in DATA_SIZES {
+        group.throughput(Throughput::Bytes(size as u64));
+        let data = vec![0xA5u8; size];
+        let data = data.as_slice();
+        let mut aws_sig = vec![0u8; ML_DSA_44_SIGNING.signature_len()];
+
+        group.bench_with_input(BenchmarkId::new("stdx-crypto", size), data, |b, data| {
+            b.iter(|| {
+                black_box(std_sk.sign(black_box(data), &[]).unwrap());
+            });
+        });
+        group.bench_with_input(BenchmarkId::new("aws-lc-rs", size), data, |b, data| {
+            b.iter(|| {
+                aws_keypair.sign(black_box(data), &mut aws_sig).unwrap();
+            });
+        });
+        group.bench_with_input(BenchmarkId::new("RustCrypto", size), data, |b, data| {
+            b.iter(|| {
+                black_box(rc_sk.sign(black_box(data)));
+            });
+        });
+    }
+    group.finish();
+
+    let mut group = c.benchmark_group("ML-DSA-44/verify");
+    for &size in DATA_SIZES {
+        group.throughput(Throughput::Bytes(size as u64));
+        let data = vec![0xA5u8; size];
+        let data = data.as_slice();
+        let std_sig = std_sk.sign(data, &[]).unwrap();
+        let mut aws_sig = vec![0u8; ML_DSA_44_SIGNING.signature_len()];
+        aws_keypair.sign(data, &mut aws_sig).unwrap();
+        let rc_sig = rc_sk.sign(data);
+
+        group.bench_with_input(BenchmarkId::new("stdx-crypto", size), data, |b, data| {
+            b.iter(|| {
+                black_box(std_pk.verify(black_box(data), &std_sig, &[]).is_ok());
+            });
+        });
+        group.bench_with_input(BenchmarkId::new("aws-lc-rs", size), data, |b, data| {
+            b.iter(|| {
+                black_box(aws_verifier.verify(black_box(data), &aws_sig).is_ok());
+            });
+        });
         group.bench_with_input(BenchmarkId::new("RustCrypto", size), data, |b, data| {
             b.iter(|| {
                 black_box(rc_pk.verify(black_box(data), &rc_sig).is_ok());
@@ -85,7 +154,9 @@ fn bench_ed25519(c: &mut Criterion) {
 }
 
 fn bench_ml_dsa_65(c: &mut Criterion) {
-    let (std_seed, std_pk) = ml_dsa_65_generate_keypair();
+    let mut std_sk = MlDsa65SigningKey::new();
+    std_sk.init(&SEED);
+    let std_pk = std_sk.public_key();
 
     let aws_keypair = PqdsaKeyPair::generate(&ML_DSA_65_SIGNING).unwrap();
     let aws_pk = aws_keypair.public_key().as_der().unwrap();
@@ -103,7 +174,7 @@ fn bench_ml_dsa_65(c: &mut Criterion) {
 
         group.bench_with_input(BenchmarkId::new("stdx-crypto", size), data, |b, data| {
             b.iter(|| {
-                black_box(ml_dsa_65_sign(black_box(&std_seed), black_box(data), &[]).unwrap());
+                black_box(std_sk.sign(black_box(data), &[]).unwrap());
             });
         });
         group.bench_with_input(BenchmarkId::new("aws-lc-rs", size), data, |b, data| {
@@ -124,14 +195,14 @@ fn bench_ml_dsa_65(c: &mut Criterion) {
         group.throughput(Throughput::Bytes(size as u64));
         let data = vec![0xA5u8; size];
         let data = data.as_slice();
-        let std_sig = ml_dsa_65_sign(&std_seed, data, &[]).unwrap();
+        let std_sig = std_sk.sign(data, &[]).unwrap();
         let mut aws_sig = vec![0u8; ML_DSA_65_SIGNING.signature_len()];
         aws_keypair.sign(data, &mut aws_sig).unwrap();
         let rc_sig = rc_sk.sign(data);
 
         group.bench_with_input(BenchmarkId::new("stdx-crypto", size), data, |b, data| {
             b.iter(|| {
-                black_box(ml_dsa_65_verify(black_box(&std_pk), black_box(data), &std_sig, &[]).is_ok());
+                black_box(std_pk.verify(black_box(data), &std_sig, &[]).is_ok());
             });
         });
         group.bench_with_input(BenchmarkId::new("aws-lc-rs", size), data, |b, data| {
@@ -148,5 +219,71 @@ fn bench_ml_dsa_65(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_ed25519, bench_ml_dsa_65);
+fn bench_ml_dsa_87(c: &mut Criterion) {
+    let mut std_sk = MlDsa87SigningKey::new();
+    std_sk.init(&SEED);
+    let std_pk = std_sk.public_key();
+
+    let aws_keypair = PqdsaKeyPair::generate(&ML_DSA_87_SIGNING).unwrap();
+    let aws_pk = aws_keypair.public_key().as_der().unwrap();
+    let aws_verifier = UnparsedPublicKey::new(&ML_DSA_87, aws_pk.as_ref());
+
+    let rc_sk = MlSigningKey::<MlDsa87>::new_from_slice(&SEED).unwrap();
+    let rc_pk = rc_sk.verifying_key();
+
+    let mut group = c.benchmark_group("ML-DSA-87/sign");
+    for &size in DATA_SIZES {
+        group.throughput(Throughput::Bytes(size as u64));
+        let data = vec![0xA5u8; size];
+        let data = data.as_slice();
+        let mut aws_sig = vec![0u8; ML_DSA_87_SIGNING.signature_len()];
+
+        group.bench_with_input(BenchmarkId::new("stdx-crypto", size), data, |b, data| {
+            b.iter(|| {
+                black_box(std_sk.sign(black_box(data), &[]).unwrap());
+            });
+        });
+        group.bench_with_input(BenchmarkId::new("aws-lc-rs", size), data, |b, data| {
+            b.iter(|| {
+                aws_keypair.sign(black_box(data), &mut aws_sig).unwrap();
+            });
+        });
+        group.bench_with_input(BenchmarkId::new("RustCrypto", size), data, |b, data| {
+            b.iter(|| {
+                black_box(rc_sk.sign(black_box(data)));
+            });
+        });
+    }
+    group.finish();
+
+    let mut group = c.benchmark_group("ML-DSA-87/verify");
+    for &size in DATA_SIZES {
+        group.throughput(Throughput::Bytes(size as u64));
+        let data = vec![0xA5u8; size];
+        let data = data.as_slice();
+        let std_sig = std_sk.sign(data, &[]).unwrap();
+        let mut aws_sig = vec![0u8; ML_DSA_87_SIGNING.signature_len()];
+        aws_keypair.sign(data, &mut aws_sig).unwrap();
+        let rc_sig = rc_sk.sign(data);
+
+        group.bench_with_input(BenchmarkId::new("stdx-crypto", size), data, |b, data| {
+            b.iter(|| {
+                black_box(std_pk.verify(black_box(data), &std_sig, &[]).is_ok());
+            });
+        });
+        group.bench_with_input(BenchmarkId::new("aws-lc-rs", size), data, |b, data| {
+            b.iter(|| {
+                black_box(aws_verifier.verify(black_box(data), &aws_sig).is_ok());
+            });
+        });
+        group.bench_with_input(BenchmarkId::new("RustCrypto", size), data, |b, data| {
+            b.iter(|| {
+                black_box(rc_pk.verify(black_box(data), &rc_sig).is_ok());
+            });
+        });
+    }
+    group.finish();
+}
+
+criterion_group!(benches, bench_ed25519, bench_ml_dsa_44, bench_ml_dsa_65, bench_ml_dsa_87);
 criterion_main!(benches);
